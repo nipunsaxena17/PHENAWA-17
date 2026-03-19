@@ -1,0 +1,8 @@
+streamlit
+numpy
+mediapipe
+4. **Add the Packages:** Create a file named exactly **`packages.txt`** and paste *only* these three lines (this is the safe, tested combination for Linux servers):
+```text
+libgl1
+libsm6
+libxext6
