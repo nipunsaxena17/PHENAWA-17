@@ -1,132 +1,228 @@
-import streamlit as st
-import numpy as np
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, Camera, Loader2, X, Aperture } from 'lucide-react';
 
-# Safe import to prevent immediate crashes if libraries are missing
-try:
-    import cv2
-    import mediapipe as mp
-    import math
-    AI_READY = True
-except ImportError:
-    AI_READY = False
+export default function PhenawaLuxPreview() {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState<{ type: string; tips: string[] } | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-# ==========================================
-# 1. LUXURIOUS UI CONFIGURATION
-# ==========================================
-st.set_page_config(page_title="PHENAWA", layout="centered", initial_sidebar_state="collapsed")
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
-st.markdown("""
-    <style>
-    /* Premium Ivory Background */
-    .stApp { background-color: #FFFFF0; }
-    
-    /* Elegant Typography */
-    h1, h2, h3, p, span, div { 
-        color: #0A0A0A !important; 
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-weight: 400;
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setIsCameraActive(true);
+      setResult(null);
+      setImagePreview(null);
+    } catch (err) {
+      console.error("Camera access denied:", err);
+      alert("Please allow camera access to use this feature.");
     }
-    
-    h1 { font-weight: 700; letter-spacing: -1px; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 10px;}
-    h3 { font-weight: 600; text-transform: uppercase; font-size: 14px; letter-spacing: 2px; color: #555 !important;}
-    
-    /* Minimalist Buttons */
-    .stButton>button { 
-        width: 100%; 
-        background-color: #0A0A0A; 
-        color: #FFFFF0 !important; 
-        border-radius: 0px; /* Sharp, modern edges */
-        border: none;
-        padding: 15px;
-        font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        transition: all 0.3s ease;
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
     }
-    .stButton>button:hover { background-color: #333333; color: white !important; }
-    
-    /* Clean Cards */
-    .metric-box {
-        border: 1px solid #E0E0E0;
-        padding: 20px;
-        text-align: center;
-        background-color: #FFFFFF;
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setImagePreview(dataUrl);
+        stopCamera();
+        runAnalysis();
+      }
     }
-    </style>
-    """, unsafe_allow_html=True)
+  };
 
+  const runAnalysis = () => {
+    setAnalyzing(true);
+    setResult(null);
 
-# ==========================================
-# 2. CORE AI LOGIC (Clean & Simple)
-# ==========================================
-def analyze_body(image_bytes):
-    """Processes the image and returns body type and advice."""
-    if not AI_READY:
-        return "System Error", ["Please install mediapipe and opencv-python-headless"]
+    // Simulate AI processing time
+    setTimeout(() => {
+      setAnalyzing(false);
+      // Simulate returning a "Rectangle / Slim" result
+      setResult({
+        type: "Rectangle / Slim",
+        tips: [
+          "Wear structured jackets.",
+          "Horizontal stripes.",
+          "Layer your clothing."
+        ]
+      });
+    }, 2500);
+  };
+
+  const handleSimulateUpload = () => {
+    // Simulate selecting an image
+    setImagePreview("https://images.unsplash.com/photo-1516257984-b1b4d707412e?auto=format&fit=crop&q=80&w=800");
+    runAnalysis();
+  };
+
+  const handleReset = () => {
+    setImagePreview(null);
+    setResult(null);
+    stopCamera();
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FFFFF0] text-[#0A0A0A] font-sans selection:bg-black selection:text-white">
+      <div className="max-w-2xl mx-auto px-6 py-12">
         
-    # Initialize MediaPipe
-    mp_pose = mp.solutions.pose
-    pose = mp_pose.Pose(static_image_mode=True, min_detection_confidence=0.5)
-    
-    # Convert image
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # Scan
-    results = pose.process(img_rgb)
-    if not results.pose_landmarks:
-        return None, None
-        
-    landmarks = results.pose_landmarks.landmark
-    
-    # Calculate simple distances (Shoulders vs Hips)
-    l_sh, r_sh = landmarks[11], landmarks[12]
-    l_hip, r_hip = landmarks[23], landmarks[24]
-    
-    shoulder_w = math.sqrt((l_sh.x - r_sh.x)**2 + (l_sh.y - r_sh.y)**2)
-    hip_w = math.sqrt((l_hip.x - r_hip.x)**2 + (l_hip.y - r_hip.y)**2)
-    
-    ratio = shoulder_w / (hip_w if hip_w > 0 else 1)
-    
-    # Minimalist Logic
-    if ratio > 1.2:
-        return "Inverted Triangle", ["Wear V-necks.", "Slim-fit shirts.", "Avoid shoulder pads."]
-    elif ratio < 0.95:
-        return "Rectangle / Slim", ["Wear structured jackets.", "Horizontal stripes.", "Layer your clothing."]
-    else:
-        return "Balanced Frame", ["Tailored fits.", "Bold patterns.", "Straight-leg trousers."]
-
-
-# ==========================================
-# 3. THE APP EXPERIENCE
-# ==========================================
-st.title("PHENAWA")
-st.markdown("### The AI-Driven Personal Stylist")
-
-st.write("Upload a full-body photo to receive precise, geometry-based styling recommendations.")
-
-# Input
-uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-
-if uploaded_file is not None:
-    with st.spinner("Analyzing geometry..."):
-        image_bytes = uploaded_file.read()
-        body_type, advice = analyze_body(image_bytes)
-        
-    if body_type:
-        st.markdown(f"""
-        <div class="metric-box">
-            <h3 style="color: #888;">Detected Profile</h3>
-            <h2 style="margin-top: 5px;">{body_type.upper()}</h2>
+        {/* Header Section */}
+        <div className="mb-10">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tighter uppercase border-b-2 border-black pb-3 mb-3">
+            PHENAWA
+          </h1>
+          <h3 className="font-semibold uppercase text-xs md:text-sm tracking-[0.2em] text-[#555555]">
+            The AI-Driven Personal Stylist
+          </h3>
         </div>
-        """, unsafe_allow_html=True)
-        
-        st.write("---")
-        st.markdown("### Your Style Directives")
-        for item in advice:
-            st.markdown(f"- **{item}**")
-    else:
-        st.error("Could not detect a full body. Please ensure shoulders and hips are visible.")
-else:
-    st.info("Awaiting image upload...")
+
+        <p className="text-lg mb-8 leading-relaxed text-[#333333]">
+          Upload a full-body photo to receive precise, geometry-based styling recommendations.
+        </p>
+
+        {/* Input Selection Area */}
+        {!imagePreview && !analyzing && !isCameraActive && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div 
+              onClick={handleSimulateUpload}
+              className="border-2 border-[#CCCCCC] hover:border-black bg-white p-12 text-center cursor-pointer transition-colors duration-300 flex flex-col items-center justify-center group"
+            >
+              <Upload size={32} strokeWidth={1.5} className="mb-4 text-[#888888] group-hover:text-black transition-colors" />
+              <p className="font-medium uppercase tracking-wider text-sm mb-1">Upload Photo</p>
+              <p className="text-xs text-[#888888]">From Gallery</p>
+            </div>
+
+            <div 
+              onClick={startCamera}
+              className="border-2 border-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-[#FFFFF0] bg-white text-[#0A0A0A] p-12 text-center cursor-pointer transition-colors duration-300 flex flex-col items-center justify-center group"
+            >
+              <Camera size={32} strokeWidth={1.5} className="mb-4 transition-colors" />
+              <p className="font-medium uppercase tracking-wider text-sm mb-1">Open Camera</p>
+              <p className="text-xs opacity-70">Live Scan</p>
+            </div>
+          </div>
+        )}
+
+        {/* Live Camera View */}
+        {isCameraActive && (
+          <div className="space-y-4 animate-in fade-in duration-500">
+            <div className="relative border-4 border-[#0A0A0A] bg-black overflow-hidden h-[60vh] md:h-[500px] w-full flex items-center justify-center">
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className="w-full h-full object-cover"
+              />
+              
+              {/* Camera UI Overlay */}
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute top-1/4 w-full h-px bg-white/30"></div>
+                <div className="absolute top-3/4 w-full h-px bg-white/30"></div>
+                <div className="absolute left-1/4 h-full w-px bg-white/30"></div>
+                <div className="absolute left-3/4 h-full w-px bg-white/30"></div>
+              </div>
+
+              <button 
+                onClick={stopCamera}
+                className="absolute top-4 right-4 bg-white/10 hover:bg-white/30 text-white p-2 rounded-full backdrop-blur-sm transition-colors pointer-events-auto"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <button 
+              onClick={capturePhoto}
+              className="w-full py-4 bg-[#0A0A0A] text-[#FFFFF0] uppercase tracking-wider text-sm font-bold hover:bg-[#333333] transition-colors duration-300 flex items-center justify-center gap-2"
+            >
+              <Aperture size={20} />
+              Capture Frame
+            </button>
+            
+            {/* Hidden canvas for taking the snapshot */}
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+        )}
+
+        {/* Loading State */}
+        {analyzing && imagePreview && (
+          <div className="space-y-6">
+            <div className="relative h-64 md:h-96 w-full overflow-hidden bg-neutral-100 border border-[#E0E0E0]">
+              <img src={imagePreview} alt="Preview" className="w-full h-full object-cover opacity-50 grayscale" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-black">
+                <Loader2 size={40} className="animate-spin mb-4" />
+                <p className="uppercase tracking-widest text-sm font-bold bg-[#FFFFF0]/80 px-4 py-2">Analyzing geometry...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Results State */}
+        {result && !analyzing && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            
+            <div className="h-64 md:h-96 w-full overflow-hidden border border-[#E0E0E0] relative">
+              <img src={imagePreview!} alt="Analyzed" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" />
+              <div className="absolute top-4 right-4 bg-black text-white text-xs font-bold px-3 py-1 uppercase tracking-wider">
+                Scanned
+              </div>
+            </div>
+
+            <div className="border border-[#E0E0E0] p-8 text-center bg-white shadow-sm">
+              <h3 className="uppercase text-xs tracking-[0.2em] text-[#888888] mb-2 font-semibold">Detected Profile</h3>
+              <h2 className="text-3xl font-bold uppercase tracking-tight">{result.type}</h2>
+            </div>
+
+            <div className="pt-4 border-t border-[#E0E0E0]">
+              <h3 className="font-bold text-lg uppercase tracking-wider mb-6">Your Style Directives</h3>
+              <ul className="space-y-4">
+                {result.tips.map((tip, idx) => (
+                  <li key={idx} className="flex items-start text-[#333333]">
+                    <span className="mr-3 font-bold text-black">•</span>
+                    <span className="text-lg">{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <button 
+              onClick={handleReset}
+              className="w-full py-4 bg-[#0A0A0A] text-[#FFFFF0] uppercase tracking-wider text-sm font-bold hover:bg-[#333333] transition-colors duration-300 mt-8"
+            >
+              Scan Another Profile
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
